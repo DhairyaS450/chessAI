@@ -1,0 +1,7 @@
+Linux-based identifier files
+*:Zone.Identifier
+
+Python
+__pycache__
+venv/
+*.env

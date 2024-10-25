@@ -1,0 +1,76 @@
+# Chess Game In Python
+
+# Modules: We will import essential libraries for input/output handling and for graphics
+# import pygame
+# import numpy
+
+# 1. Initialize the chessboard
+# - Function: initialize_board()
+# - This function will create an 8x8 matrix representing the chessboard
+# - Each square of the board will be filled with either a piece (e.g., "K" for White King and "k" for Black King) or None (for empty squares).
+# - Return the initial board setup with pieces in standard chess starting positions.
+
+# 2. Main game loop
+# - Function: main_game_loop()
+# - This function will run the game, alternating between player turns.
+# - It will continue to loop until a checkmate, stalemate, or player exit condition is met.
+# - For each turn:
+#   - Get the current player's move (human or AI).
+#   - Validate the move using validate_move().
+#   - If the move is valid, update the board with move_piece().
+#   - After each move, check for check, checkmate, or stalemate conditions.
+
+# 3. Handling player moves
+# - Function: get_user_input()
+# - The function will prompt the player to enter the starting and ending coordinates for a move (e.g., "e2e4").
+# - Input will be converted into board positions and passed to move_piece().
+
+# 4. Validating moves
+# - Function: validate_move(piece, start_pos, end_pos)
+# - This function will check if the move is valid according to chess rules for the given piece.
+# - For example, for a pawn, it will check if the destination square is empty for a forward move or if it contains an opponent’s piece for a diagonal capture.
+# - For each piece type (pawn, rook, knight, etc.), this function will contain logic to ensure that the move adheres to the rules.
+
+# 5. Moving pieces
+# - Function: move_piece(start_pos, end_pos)
+# - If the move is valid, this function will update the board by moving the piece from the starting position to the ending position.
+# - It will also handle capturing any opponent’s pieces present at the destination square.
+# - The function will update the internal representation of the board (the matrix) to reflect the new positions of the pieces.
+
+# 6. Game status checks (check, checkmate, stalemate)
+# - Function: check_checkmate(player_color)
+# - After each move, the game will check if the current player’s king is in checkmate.
+# - This function will examine all possible moves for the opponent’s pieces to determine if the player’s king can escape check. If not, the game ends with checkmate.
+# 
+# - Function: check_stalemate(player_color)
+# - This function will check if the game has reached a stalemate, where the player has no legal moves but their king is not in check.
+
+# - Function: check_check(player_color)
+# - This function will check if the current player’s king is in check after each move.
+# - It will identify any opponent pieces threatening the king and flag the game state accordingly.
+
+# 7. Castling
+# - Function: castle_move(king_pos, rook_pos)
+# - This function will handle castling moves, checking that the king and rook have not moved previously and that there are no pieces between them.
+# - It will also ensure that the king is not moving through or into check.
+
+# 8. Pawn promotion
+# - Function: promote_pawn(pawn_pos, new_piece_type)
+# - This function will trigger when a pawn reaches the final rank (row 8 for White, row 1 for Black).
+# - The player will be prompted to choose a piece to promote the pawn to (queen, rook, bishop, or knight).
+# - The board will be updated to replace the pawn with the chosen piece.
+
+# 9. En passant
+# - Function: en_passant(pawn_pos, captured_pawn_pos)
+# - This function will allow a pawn to capture an opponent's pawn using the en passant rule.
+# - It will check if the opponent’s pawn moved two squares forward on the previous turn and is eligible for en passant capture.
+
+# 10. Move history and game log
+# - Function: log_move(start_pos, end_pos)
+# - This function will store each move made during the game in a log, including the piece type and starting/ending positions.
+# - The move history will be displayed to the player if requested.
+
+# 11. Game end conditions
+# - The game will end when one player’s king is checkmated or if a stalemate occurs.
+# - The program will display a message indicating the result (e.g., “Checkmate: White wins” or 
+#   “Draw by stalemate”).

@@ -1,0 +1,1 @@
+This is a chess game + algorithm I am trying to create using pygame.
