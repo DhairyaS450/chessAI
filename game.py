@@ -14,6 +14,10 @@ GREEN = (0, 255, 0)
 SELECTED_COLOR = (255, 0, 0)  # Highlight selected square in red
 PIECE_IMAGES = {}
 
+# Variables for Castling
+black_king_moved = False
+white_king_moved = False
+
 # Load piece images
 def load_images():
     pieces = ['R', 'N', 'B', 'Q', 'K', 'P', 'r', 'n', 'b', 'q', 'k', 'p']
@@ -77,6 +81,24 @@ def validate_move(board, piece, start_pos, end_pos, turn):
     # Prevent capturing own pieces
     if (turn == 'white' and end_piece.isupper()) or (turn == 'black' and end_piece.islower()):
         return False
+
+    # Simulate the move to test for check
+    original_start_piece = board[start_row][start_col]
+    original_end_piece = board[end_row][end_col]
+
+    board[start_row][start_col] = '-' # Temporarily clear the starting square
+    board[end_row][end_col] = start_piece # Place the piece at the new position
+
+    # Check if the move results in check for the player's own king
+    if check_check(board, turn):
+        # Revert the board to the original position
+        board[start_row][start_col] = original_start_piece
+        board[end_row][end_col] = original_end_piece
+        return False # Move is invalid as it places the king in check
+    
+    # Revert the board for rest of validations
+    board[start_row][start_col] = original_start_piece
+    board[end_row][end_col] = original_end_piece
 
     piece = piece.lower()
     
@@ -150,107 +172,183 @@ def clear_path(board, start, end):
 
     return True
 
-# Check if the move puts the king in check
-def check_check(board, king_pos, turn):
-    """
-    Checks if the current player's king is in check.
-    :param board: The chessboard.
-    :param king_pos: The position (row, col) of the current player's king.
-    :param turn: The current player's turn ('white' or 'black').
-    :return: True if the king is in check, False otherwise.
-    """
-    enemy_turn = 'black' if turn == 'white' else 'white'
+def check_check(board, turn):
+    # Locate the current player's king
+    king = 'K' if turn == 'white' else 'k'
+    king_pos = None
     
-    # Loop through the entire board and check if any enemy piece can attack the king
+    for row in range(ROWS):
+        for col in range(COLS):
+            if board[row][col] == king:
+                king_pos = (row, col)
+                break
+        if king_pos:
+            break
+
+    if not king_pos:
+        raise ValueError("King not found on the board")  # Safety check
+
+    # Check all opposing pieces to see if any can capture the king
+    opponent_turn = 'black' if turn == 'white' else 'white'
     for row in range(ROWS):
         for col in range(COLS):
             piece = board[row][col]
-            if (enemy_turn == 'white' and piece.isupper()) or (enemy_turn == 'black' and piece.islower()):
-                if validate_move(board, piece, (row, col), king_pos, enemy_turn):
-                    return True  # King is in check
-    return False  # King is not in check
+            
+            # Skip empty squares or current player's pieces
+            if piece == '-' or (turn == 'white' and piece.isupper()) or (turn == 'black' and piece.islower()):
+                continue
+            
+            # Determine if this piece can move to the king's position
+            start_pos = (row, col)
+            if is_threatening_king(board, piece, start_pos, king_pos):
+                return True  # King is in check
 
-# Check position for checkmate
-def check_checkmate(board, king_pos, turn):
-    """
-    Checks if the current player's king is in checkmate.
-    :param board: The chessboard.
-    :param king_pos: The position (row, col) of the current player's king.
-    :param turn: The current player's turn ('white' or 'black').
-    :return: True if the king is in checkmate, False otherwise.
-    """
-    if not check_check(board, king_pos, turn):
-        return False  # King is not in check, so no checkmate
+    return False  # No threats to the king
 
-    # Generate all possible moves for the current player
+def is_threatening_king(board, piece, start_pos, king_pos):
+    """ Helper function to check if a piece at start_pos can capture the king at king_pos. """
+    start_row, start_col = start_pos
+    end_row, end_col = king_pos
+    piece = piece.lower()
+
+    # Pawn movement (checks capture only)
+    if piece == 'p':
+        direction = -1 if board[start_row][start_col].isupper() else 1
+        if abs(start_col - end_col) == 1 and end_row == start_row + direction:
+            return True
+
+    # Rook movement (straight line)
+    elif piece == 'r' and (start_row == end_row or start_col == end_col):
+        if clear_path(board, start_pos, king_pos):
+            return True
+
+    # Knight movement (L-shape)
+    elif piece == 'n':
+        if (abs(start_row - end_row) == 2 and abs(start_col - end_col) == 1) or \
+           (abs(start_row - end_row) == 1 and abs(start_col - end_col) == 2):
+            return True
+
+    # Bishop movement (diagonal)
+    elif piece == 'b' and abs(start_row - end_row) == abs(start_col - end_col):
+        if clear_path(board, start_pos, king_pos):
+            return True
+
+    # Queen movement (combination of rook and bishop)
+    elif piece == 'q':
+        if (start_row == end_row or start_col == end_col or
+            abs(start_row - end_row) == abs(start_col - end_col)):
+            if clear_path(board, start_pos, king_pos):
+                return True
+
+    # King movement (one square in any direction)
+    elif piece == 'k':
+        if abs(start_row - end_row) <= 1 and abs(start_col - end_col) <= 1:
+            return True
+
+    return False
+
+def is_checkmate(board, turn):
+    if not check_check(board, turn):
+        return False  # Not in check, so cannot be checkmate
+
+    # Check if any legal move can escape check
     for row in range(ROWS):
         for col in range(COLS):
             piece = board[row][col]
             if (turn == 'white' and piece.isupper()) or (turn == 'black' and piece.islower()):
-                for r in range(ROWS):
-                    for c in range(COLS):
-                        # Test if the move is valid and would result in escaping check
-                        if validate_move(board, piece, (row, col), (r, c), turn):
-                            # Temporarily move the piece
-                            temp_board = [row.copy() for row in board]  # Create a temporary copy of the board
-                            move_piece(temp_board, (row, col), (r, c))
-                            
-                            # Check if the king is still in check after the move
-                            if not check_check(temp_board, king_pos, turn):
-                                return False  # There's a move that can prevent checkmate
+                start_pos = (row, col)
+                
+                # Try moving the piece to all squares on the board
+                for end_row in range(ROWS):
+                    for end_col in range(COLS):
+                        end_pos = (end_row, end_col)
+                        
+                        # Check if the move is valid and doesn't leave the king in check
+                        if validate_move(board, piece, start_pos, end_pos, turn):
+                            # Temporarily make the move
+                            original_start = board[start_pos[0]][start_pos[1]]
+                            original_end = board[end_pos[0]][end_pos[1]]
+                            board[start_pos[0]][start_pos[1]] = '-'
+                            board[end_pos[0]][end_pos[1]] = piece
 
-    return True  # No valid moves left, checkmate
+                            # If the move resolves check, it’s not checkmate
+                            if not check_check(board, turn):
+                                # Revert the move and return False
+                                board[start_pos[0]][start_pos[1]] = original_start
+                                board[end_pos[0]][end_pos[1]] = original_end
+                                return False
 
-# Check position for stalemate
-def check_stalemate(board, turn):
-    """
-    Checks if the current player is in stalemate.
-    :param board: The chessboard.
-    :param turn: The current player's turn ('white' or 'black').
-    :return: True if the player is in stalemate, False otherwise.
-    """
-    # Loop through all pieces of the current player
+                            # Revert the move
+                            board[start_pos[0]][start_pos[1]] = original_start
+                            board[end_pos[0]][end_pos[1]] = original_end
+
+    return True  # No moves avoid check, so it's checkmate
+
+def is_stalemate(board, turn):
+    if check_check(board, turn):
+        return False  # If in check, it cannot be stalemate
+
+    # Check if any legal move exists for the player
     for row in range(ROWS):
         for col in range(COLS):
             piece = board[row][col]
             if (turn == 'white' and piece.isupper()) or (turn == 'black' and piece.islower()):
-                # Try all possible moves for the current player
-                for r in range(ROWS):
-                    for c in range(COLS):
-                        if validate_move(board, piece, (row, col), (r, c), turn):
-                            # If there's at least one valid move, it's not stalemate
-                            temp_board = [row.copy() for row in board]  # Create a temporary copy of the board
-                            move_piece(temp_board, (row, col), (r, c))
-                            
-                            # Check if this move doesn't result in check
-                            king_pos = find_king(board, turn)  # You need to implement find_king() to locate the king
-                            if not check_check(temp_board, king_pos, turn):
-                                return False  # Not stalemate, a valid move exists
+                start_pos = (row, col)
+                
+                # Try moving the piece to all squares on the board
+                for end_row in range(ROWS):
+                    for end_col in range(COLS):
+                        end_pos = (end_row, end_col)
+                        
+                        # Check if the move is valid and keeps the king out of check
+                        if validate_move(board, piece, start_pos, end_pos, turn):
+                            # Temporarily make the move
+                            original_start = board[start_pos[0]][start_pos[1]]
+                            original_end = board[end_pos[0]][end_pos[1]]
+                            board[start_pos[0]][start_pos[1]] = '-'
+                            board[end_pos[0]][end_pos[1]] = piece
 
-    return True  # No valid moves and king is not in check, it's a stalemate
+                            # If this move keeps the king out of check, it's not stalemate
+                            if not check_check(board, turn):
+                                # Revert the move and return False
+                                board[start_pos[0]][start_pos[1]] = original_start
+                                board[end_pos[0]][end_pos[1]] = original_end
+                                return False
 
-# Helper function: find the king's position
-def find_king(board, turn):
-    """
-    Find the king's position on the board.
-    :param board: The chessboard.
-    :param turn: The current player's turn ('white' or 'black').
-    :return: The position (row, col) of the current player's king.
-    """
-    king_symbol = 'K' if turn == 'white' else 'k'
-    
-    for row in range(ROWS):
-        for col in range(COLS):
-            if board[row][col] == king_symbol:
-                return (row, col)
-    return None  # King not found (shouldn't happen in a valid game)
+                            # Revert the move
+                            board[start_pos[0]][start_pos[1]] = original_start
+                            board[end_pos[0]][end_pos[1]] = original_end
+
+    return True  # No legal moves available, and not in check, so it’s stalemate
+
+def check_castle(board, turn, is_long):
+    if turn == 'black' and not black_king_moved:
+        if is_long:
+            if board[0][0] == 'r' and clear_path(board, (0, 4), (0, 0)):
+                print('Can castle')
+        else:
+            if board[0][7] == 'r' and clear_path(board, (0, 4), (0, 7)):
+                print('Can castle')
+    elif turn == 'white' and not white_king_moved:
+        if is_long:
+            if board[7][0] == "R" and clear_path(board, (7, 4), (7, 0)):
+                print('Can castle')
+        else:
+            if board[7][7] == "R" and clear_path(board, (7, 4), (7, 7)):
+                print('Can castle')
 
 # Move pieces
 def move_piece(board, start, end):
+    global black_king_moved, white_king_moved
     piece = board[start[0]][start[1]]
+    if piece == 'k':
+        black_king_moved = True
+    elif piece == 'K':
+        white_king_moved = True
+
     board[start[0]][start[1]] = '-'
     board[end[0]][end[1]] = piece
-    
+
 # Main game loop
 def main():
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -281,30 +379,26 @@ def main():
                 if selected_square:
                     # Validate move before applying it
                     start_row, start_col = selected_square
+                    piece = board[start_row][start_col]
                     if validate_move(board, board[start_row][start_col], selected_square, (row, col), turn):
                         move_piece(board, selected_square, (row, col))
-
-                        # Check if the move puts the opponent's king in check or leads to checkmate/stalemate
-                        opponent_turn = 'black' if turn == 'white' else 'white'
-                        king_pos = find_king(board, opponent_turn)  # Find opponent's king position
-
-                        # Check for checkmate and stalemate after the move
-                        if check_checkmate(board, king_pos, opponent_turn):
-                            print(f"Checkmate! {turn.capitalize()} wins.")
-                            running = False  # End the game
-                        elif check_stalemate(board, opponent_turn):
+                        turn = 'black' if turn == 'white' else 'white'  # Switch turns
+                        # After moving a piece and switching turns
+                        if is_checkmate(board, turn):
+                            print(f"Checkmate! {turn} loses.")
+                            running = False  # End the game 
+                        elif is_stalemate(board, turn):
                             print("Stalemate! It's a draw.")
-                            running = False  # End the game
-                        elif check_check(board, king_pos, opponent_turn):
-                            print(f"{opponent_turn.capitalize()} is in check.")
-
-                        # Switch turns after a valid move
-                        turn = 'black' if turn == 'white' else 'white'
-
-                    selected_square = None  # Reset selection after move
+                            running = False  # End the game 
+                    elif (piece == 'k' and turn == 'black') or (piece == 'K' and turn == 'white'):
+                        if start_row - row == 0 and abs(start_col - col) >= 2: # User tries to castle
+                            is_long = True if start_col - col >= 2 else False
+                            check_castle(board, turn, is_long)
+                    selected_square = None
                 else:
                     selected_square = (row, col)
 
         clock.tick(60)
 
-main()
+if __name__ == "__main__":
+    main()
