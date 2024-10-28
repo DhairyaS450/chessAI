@@ -15,8 +15,12 @@ SELECTED_COLOR = (255, 0, 0)  # Highlight selected square in red
 PIECE_IMAGES = {}
 
 # Variables for Castling
-black_king_moved = False
 white_king_moved = False
+black_king_moved = False
+white_rook_king_side_moved = False
+white_rook_queen_side_moved = False
+black_rook_king_side_moved = False
+black_rook_queen_side_moved = False
 
 # Load piece images
 def load_images():
@@ -321,33 +325,84 @@ def is_stalemate(board, turn):
 
     return True  # No legal moves available, and not in check, so it’s stalemate
 
-def check_castle(board, turn, is_long):
-    if turn == 'black' and not black_king_moved:
-        if is_long:
-            if board[0][0] == 'r' and clear_path(board, (0, 4), (0, 0)):
-                print('Can castle')
-        else:
-            if board[0][7] == 'r' and clear_path(board, (0, 4), (0, 7)):
-                print('Can castle')
-    elif turn == 'white' and not white_king_moved:
-        if is_long:
-            if board[7][0] == "R" and clear_path(board, (7, 4), (7, 0)):
-                print('Can castle')
-        else:
-            if board[7][7] == "R" and clear_path(board, (7, 4), (7, 7)):
-                print('Can castle')
+# Function for castling
+def validate_castling(board, start, end, turn):
+    start_row, start_col = start
+    end_row, end_col = end
+
+    if turn == 'white':
+        # King-side castling for white
+        if start == (7, 4) and end == (7, 6) and not white_king_moved and not white_rook_king_side_moved:
+            if board[7][5] == '-' and board[7][6] == '-':
+                # Check if passing squares are safe
+                if not check_check(board, turn) and not check_check(move_temporary(board, (7, 4), (7, 5)), turn) and not check_check(move_temporary(board, (7, 4), (7, 6)), turn):
+                    return "castling_kingside"
+
+        # Queen-side castling for white
+        if start == (7, 4) and end == (7, 2) and not white_king_moved and not white_rook_queen_side_moved:
+            if board[7][1] == '-' and board[7][2] == '-' and board[7][3] == '-':
+                if not check_check(board, turn) and not check_check(move_temporary(board, (7, 4), (7, 3)), turn) and not check_check(move_temporary(board, (7, 4), (7, 2)), turn):
+                    return "castling_queenside"
+
+    elif turn == 'black':
+        # King-side castling for black
+        if start == (0, 4) and end == (0, 6) and not black_king_moved and not black_rook_king_side_moved:
+            if board[0][5] == '-' and board[0][6] == '-':
+                if not check_check(board, turn) and not check_check(move_temporary(board, (0, 4), (0, 5)), turn) and not check_check(move_temporary(board, (0, 4), (0, 6)), turn):
+                    return "castling_kingside"
+
+        # Queen-side castling for black
+        if start == (0, 4) and end == (0, 2) and not black_king_moved and not black_rook_queen_side_moved:
+            if board[0][1] == '-' and board[0][2] == '-' and board[0][3] == '-':
+                if not check_check(board, turn) and not check_check(move_temporary(board, (0, 4), (0, 3)), turn) and not check_check(move_temporary(board, (0, 4), (0, 2)), turn):
+                    return "castling_queenside"
+
+    return False  # If none of the castling conditions are met
+
+# Promote pawn if it gets to the last rank
+def promote_pawn():
+    choice = input("Promote pawn to (Q)ueen, (R)ook, (B)ishop, or (N)ight: ").upper()
+    if choice in ['Q', 'R', 'B', 'N']:
+        return choice
+    return 'Q'  # Default to Queen if input is invalid
+
+# Helper function to temporarily move a piece
+def move_temporary(board, start, end):
+    temp_board = [row[:] for row in board]
+    piece = temp_board[start[0]][start[1]]
+    temp_board[start[0]][start[1]] = '-'
+    temp_board[end[0]][end[1]] = piece
+    return temp_board
 
 # Move pieces
 def move_piece(board, start, end):
-    global black_king_moved, white_king_moved
-    piece = board[start[0]][start[1]]
-    if piece == 'k':
-        black_king_moved = True
-    elif piece == 'K':
-        white_king_moved = True
+    global white_king_moved, black_king_moved
+    global white_rook_king_side_moved, white_rook_queen_side_moved
+    global black_rook_king_side_moved, black_rook_queen_side_moved
 
+    piece = board[start[0]][start[1]]
     board[start[0]][start[1]] = '-'
     board[end[0]][end[1]] = piece
+
+    # Track king and rook movements
+    if piece == 'K':
+        white_king_moved = True
+    elif piece == 'k':
+        black_king_moved = True
+    elif piece == 'R' and start == (7, 7):  # White king-side rook
+        white_rook_king_side_moved = True
+    elif piece == 'R' and start == (7, 0):  # White queen-side rook
+        white_rook_queen_side_moved = True
+    elif piece == 'r' and start == (0, 7):  # Black king-side rook
+        black_rook_king_side_moved = True
+    elif piece == 'r' and start == (0, 0):  # Black queen-side rook
+        black_rook_queen_side_moved = True
+
+    # Check for pawn promotion
+    if piece == 'P' and end[0] == 0:  # White pawn reaches the last rank
+        board[end[0]][end[1]] = promote_pawn()
+    elif piece == 'p' and end[0] == 7:  # Black pawn reaches the last rank
+        board[end[0]][end[1]] = promote_pawn().lower()
 
 # Main game loop
 def main():
@@ -390,10 +445,19 @@ def main():
                         elif is_stalemate(board, turn):
                             print("Stalemate! It's a draw.")
                             running = False  # End the game 
-                    elif (piece == 'k' and turn == 'black') or (piece == 'K' and turn == 'white'):
-                        if start_row - row == 0 and abs(start_col - col) >= 2: # User tries to castle
-                            is_long = True if start_col - col >= 2 else False
-                            check_castle(board, turn, is_long)
+
+                    # Castling logic
+                    castling_result = validate_castling(board, (start_row, start_col), (row, col), turn)
+                    if castling_result == 'castling_kingside':
+                        # Move king and rook for king-side castling
+                        move_piece(board, (start_row, 4), (start_row, 6))  # King
+                        move_piece(board, (start_row, 7), (start_row, 5))  # Rook
+                        turn = 'black' if turn == 'white' else 'white'  # Switch turns
+                    elif castling_result == 'castling_queenside':
+                        # Move king and rook for queen-side castling
+                        move_piece(board, (start_row, 4), (start_row, 2))  # King
+                        move_piece(board, (start_row, 0), (start_row, 3))  # Rook
+                        turn = 'black' if turn == 'white' else 'white'  # Switch turns
                     selected_square = None
                 else:
                     selected_square = (row, col)
