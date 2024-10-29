@@ -22,6 +22,8 @@ white_rook_queen_side_moved = False
 black_rook_king_side_moved = False
 black_rook_queen_side_moved = False
 
+en_passant_square = None  # Set to (row, col) when en passant is available
+
 # Load piece images
 def load_images():
     pieces = ['R', 'N', 'B', 'Q', 'K', 'P', 'r', 'n', 'b', 'q', 'k', 'p']
@@ -117,8 +119,14 @@ def validate_move(board, piece, start_pos, end_pos, turn):
             if (start_row == 1 or start_row == 6) and end_row == start_row + 2 * direction and board[start_row + direction][start_col] == '-':
                 return True
         # Pawn capture
-        elif abs(start_col - end_col) == 1 and end_row == start_row + direction and end_piece != '-':
-            return True
+        elif abs(start_col - end_col) == 1:
+            if end_row == start_row + direction:
+                # Regular capture
+                if end_piece != '-':
+                    return True
+                # En passant capture
+                elif en_passant_square == (end_row, end_col):
+                    return True
 
     # Rook movement
     if piece == 'r':
@@ -379,6 +387,7 @@ def move_piece(board, start, end):
     global white_king_moved, black_king_moved
     global white_rook_king_side_moved, white_rook_queen_side_moved
     global black_rook_king_side_moved, black_rook_queen_side_moved
+    global en_passant_square
 
     piece = board[start[0]][start[1]]
     board[start[0]][start[1]] = '-'
@@ -403,6 +412,21 @@ def move_piece(board, start, end):
         board[end[0]][end[1]] = promote_pawn()
     elif piece == 'p' and end[0] == 7:  # Black pawn reaches the last rank
         board[end[0]][end[1]] = promote_pawn().lower()
+
+    # Reset en passant square after each move
+    old_en_passant_square = en_passant_square
+    en_passant_square = None
+
+    # Check for two-square pawn advance to set en passant target
+    if piece == 'P' and start[0] == 6 and end[0] == 4:
+        en_passant_square = (5, end[1])  # White pawn's target
+    elif piece == 'p' and start[0] == 1 and end[0] == 3:
+        en_passant_square = (2, end[1])  # Black pawn's target
+
+    # En passant capture handling
+    if piece.lower() == 'p' and old_en_passant_square == end and abs(start[1] - end[1]) == 1:
+        capture_row = start[0] # Row of the captured pawn
+        board[capture_row][end[1]] = '-'  # Remove the opponent’s pawn
 
 # Main game loop
 def main():
