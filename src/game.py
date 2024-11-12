@@ -30,7 +30,7 @@ def load_images():
     pieces = ["R", "N", "B", "Q", "K", "P", "r", "n", "b", "q", "k", "p"]
     for piece in pieces:
         PIECE_IMAGES[piece] = pygame.transform.scale(
-            pygame.image.load(f"../images/{piece}.png"), (SQUARE_SIZE, SQUARE_SIZE)
+            pygame.image.load(f"src/images/{piece}.png"), (SQUARE_SIZE, SQUARE_SIZE)
         )
 
 
