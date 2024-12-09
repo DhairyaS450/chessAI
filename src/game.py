@@ -1,596 +1,239 @@
 import pygame
-import sys
+from pprint import pprint
+from chess_board import ChessBoard
 
-# Initialize Pygame
-pygame.init()
+class GameController:
+    def __init__(self, screen, ai=None):
+        """
+        Initializes the game controller, including the chessboard and pygame.
+        """
+        pygame.init()
+        self.screen = screen  # 480x480 pixel window
+        self.ai = ai
+        pygame.display.set_caption("Chess Game")
+        self.clock = pygame.time.Clock()
 
-# Constants
-WIDTH, HEIGHT = 800, 800  # Screen dimensions
-ROWS, COLS = 8, 8  # Chessboard dimensions
-SQUARE_SIZE = WIDTH // COLS
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-GREEN = (0, 255, 0)
-SELECTED_COLOR = (255, 0, 0)  # Highlight selected square in red
-PIECE_IMAGES = {}
+        # Chessboard and game state
+        self.board = ChessBoard()
+        self.selected_piece = None  # Currently selected piece (row, col)
+        self.legal_moves = []       # Legal moves for the selected piece
+        self.running = True         # Main game loop flag
 
-# Variables for Castling
-white_king_moved = False
-black_king_moved = False
-white_rook_king_side_moved = False
-white_rook_queen_side_moved = False
-black_rook_king_side_moved = False
-black_rook_queen_side_moved = False
+        # Load piece images
+        self.piece_images = self._load_piece_images()
 
-en_passant_square = None  # Set to (row, col) when en passant is available
+    def _load_piece_images(self):
+        """
+        Loads images for chess pieces and returns a dictionary mapping pieces to images.
+        """
+        images = {}
+        piece_types = ['wP', 'wR', 'wN', 'wB', 'wQ', 'wK', 'bP', 'bR', 'bN', 'bB', 'bQ', 'bK']
+        for piece in piece_types:
+            images[piece] = pygame.image.load(f'assets/pieces/{piece}.png')
+        return images
 
+    def draw_board(self):
+        """
+        Draws the chessboard and all pieces.
+        """
+        colors = [pygame.Color(240, 217, 181), pygame.Color(181, 136, 99)]  # Light and dark squares
+        for row in range(8):
+            for col in range(8):
+                color = colors[(row + col) % 2]
+                pygame.draw.rect(self.screen, color, pygame.Rect(col * 60, row * 60, 60, 60))
 
-# Load piece images
-def load_images():
-    pieces = ["R", "N", "B", "Q", "K", "P", "r", "n", "b", "q", "k", "p"]
-    for piece in pieces:
-        PIECE_IMAGES[piece] = pygame.transform.scale(
-            pygame.image.load(f"src/images/{piece}.png"), (SQUARE_SIZE, SQUARE_SIZE)
-        )
+                # Draw piece if present
+                piece = self.board.board[row][col]
+                if piece != '..':
+                    self.screen.blit(self.piece_images[piece], (col * 60, row * 60))
 
+    def highlight_moves(self):
+        """
+        Highlights the selected piece and its legal moves.
+        """
+        if self.selected_piece:
+            row, col = self.selected_piece
+            pygame.draw.rect(self.screen, pygame.Color(0, 255, 0, 100),
+                             pygame.Rect(col * 60, row * 60, 60, 60), 5)  # Highlight selected piece
 
-# Draw the chessboard
-def draw_board(screen, selected_square):
-    for row in range(ROWS):
-        for col in range(COLS):
-            color = WHITE if (row + col) % 2 == 0 else GREEN
-            pygame.draw.rect(
-                screen,
-                color,
-                pygame.Rect(
-                    col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE
-                ),
-            )
+            for move in self.legal_moves:
+                _, end_pos = move
+                r, c = end_pos
+                pygame.draw.circle(self.screen, pygame.Color(0, 255, 0),
+                                   (c * 60 + 30, r * 60 + 30), 10)  # Highlight possible moves
 
-            # Highlight selected square
-            if selected_square == (row, col):
-                pygame.draw.rect(
-                    screen,
-                    SELECTED_COLOR,
-                    pygame.Rect(
-                        col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE
-                    ),
-                    3,
-                )
+    def handle_click(self, pos):
+        """
+        Handles mouse clicks to select pieces and make moves.
+        Args:
+            pos (tuple): (x, y) position of the mouse click in pixels.
+        """
+        col, row = pos[0] // 60, pos[1] // 60  # Convert pixel coordinates to board indices
 
+        if self.selected_piece:  # A piece is already selected
+            move = (self.selected_piece, (row, col))
+            if move in self.legal_moves:  # Valid move
+                self.board.execute_move(move)
+                self.selected_piece = None
+                self.legal_moves = []
+                self.check_game_over()
 
-# Draw the pieces on the board
-def draw_pieces(screen, board):
-    for row in range(ROWS):
-        for col in range(COLS):
-            piece = board[row][col]
-            if piece != "-":
-                screen.blit(PIECE_IMAGES[piece], (col * SQUARE_SIZE, row * SQUARE_SIZE))
+                # If AI is playing the next turn, ensure it uses the updated board state
+                if self.ai and self.board.turn == 'black': # Assuming AI plays black
+                    self.ai_turn()
+            else:  # Invalid move, deselect
+                self.selected_piece = None
+                self.legal_moves = []
+        else:  # No piece is selected
+            if 0 <= row < 8 and 0 <= col < 8:
+                piece = self.board.board[row][col]
+                if piece.startswith(self.board.turn[0]):  # Select a piece of the current player
+                    self.selected_piece = (row, col)
+                    self.legal_moves = self.board._get_piece_moves((row, col), piece)
 
+    def ai_turn(self):
+        """
+        Executes the AI's turn after the board is updated.
+        """
+        legal_moves = self.board.generate_legal_moves(self.board.turn)  # Use updated board state
+        ai_move = self.ai.choose_move(self.board)  # Choose a move
+        if ai_move in legal_moves:  # Ensure move is valid
+            self.board.execute_move(ai_move)
+            self.check_game_over()  # Check for game-ending conditions
+        else:
+            raise ValueError("AI attempted an illegal move!")
 
-# Initialize the chessboard
-def initialize_board():
-    return [
-        ["r", "n", "b", "q", "k", "b", "n", "r"],
-        ["p", "p", "p", "p", "p", "p", "p", "p"],
-        ["-", "-", "-", "-", "-", "-", "-", "-"],
-        ["-", "-", "-", "-", "-", "-", "-", "-"],
-        ["-", "-", "-", "-", "-", "-", "-", "-"],
-        ["-", "-", "-", "-", "-", "-", "-", "-"],
-        ["P", "P", "P", "P", "P", "P", "P", "P"],
-        ["R", "N", "B", "Q", "K", "B", "N", "R"],
-    ]
+    def handle_ai_turn(self):
+        """
+        Handles the AI's turn by generating and executing its move.
+        """
+        if self.board.turn == 'black':  # Assuming AI plays as black
+            ai_move = self.ai.choose_move(self.board)
+            if ai_move:
+                self.board.execute_move(ai_move)
+                self.check_game_over()  # Check for game-ending conditions
 
+    def check_game_over(self):
+        """
+        Checks for game-ending conditions (checkmate or stalemate) and handles them.
+        """
+        # Generate legal moves for the current player
+        legal_moves = self.board.generate_legal_moves(self.board.turn)
 
-# Get mouse position on the board
-def get_square_under_mouse(pos):
-    x, y = pos
-    row = y // SQUARE_SIZE
-    col = x // SQUARE_SIZE
-    return row, col
+        if not legal_moves:  # No legal moves
+            if self.board.is_check(self.board.turn):
+                self.show_popup("Checkmate", f"{self.board.turn.capitalize()} is checkmated! "
+                                            f"{'Black' if self.board.turn == 'white' else 'White'} wins.")
+            else:
+                self.show_popup("Stalemate", "The game is a draw by stalemate.")
 
+    def show_popup(self, title, message):
+        """
+        Displays a popup message using pygame for game-ending conditions.
+        Args:
+            title (str): The title of the popup.
+            message (str): The message to display.
+        """
+        popup_width, popup_height = 400, 200
+        popup_x = (self.screen.get_width() - popup_width) // 2
+        popup_y = (self.screen.get_height() - popup_height) // 2
 
-# Move validation: Only basic movement validation for pawns, rooks, knights, bishops, queens, kings
-def validate_move(board, piece, start_pos, end_pos, turn):
-    start_row, start_col = start_pos
-    end_row, end_col = end_pos
+        # Create the popup surface
+        popup = pygame.Surface((popup_width, popup_height))
+        popup.fill((200, 200, 200))  # Light gray background
+        pygame.draw.rect(popup, (0, 0, 0), popup.get_rect(), 5)  # Black border
 
-    # Get the piece at the start and end positions
-    start_piece = board[start_row][start_col]
-    end_piece = board[end_row][end_col]
+        # Display the title
+        font_title = pygame.font.SysFont(None, 36)
+        title_text = font_title.render(title, True, (0, 0, 0))
+        popup.blit(title_text, ((popup_width - title_text.get_width()) // 2, 20))
 
-    # Prevent moving empty spaces or opponent's turn
-    if start_piece == "-":
-        return False
-    if (turn == "white" and start_piece.islower()) or (
-        turn == "black" and start_piece.isupper()
-    ):
-        return False
+        # Display the message
+        font_message = pygame.font.SysFont(None, 28)
+        message_text = font_message.render(message, True, (0, 0, 0))
+        popup.blit(message_text, ((popup_width - message_text.get_width()) // 2, 80))
 
-    # Prevent capturing own pieces
-    if (turn == "white" and end_piece.isupper()) or (
-        turn == "black" and end_piece.islower()
-    ):
-        return False
+        # Define button dimensions and positions
+        restart_button_rect = pygame.Rect((popup_width // 4 - 50, 130, 100, 40))
+        quit_button_rect = pygame.Rect((3 * popup_width // 4 - 50, 130, 100, 40))
 
-    # Simulate the move to test for check
-    original_start_piece = board[start_row][start_col]
-    original_end_piece = board[end_row][end_col]
+        # Draw buttons on the popup
+        pygame.draw.rect(popup, (0, 128, 0), restart_button_rect)  # Green for restart
+        pygame.draw.rect(popup, (128, 0, 0), quit_button_rect)     # Red for quit
 
-    board[start_row][start_col] = "-"  # Temporarily clear the starting square
-    board[end_row][end_col] = start_piece  # Place the piece at the new position
+        # Display button text
+        font_buttons = pygame.font.SysFont(None, 32)
+        restart_text = font_buttons.render("Restart", True, (255, 255, 255))
+        quit_text = font_buttons.render("Quit", True, (255, 255, 255))
 
-    # Check if the move results in check for the player's own king
-    if check_check(board, turn):
-        # Revert the board to the original position
-        board[start_row][start_col] = original_start_piece
-        board[end_row][end_col] = original_end_piece
-        return False  # Move is invalid as it places the king in check
+        popup.blit(restart_text, (restart_button_rect.x + (restart_button_rect.width - restart_text.get_width()) // 2,
+                                restart_button_rect.y + (restart_button_rect.height - restart_text.get_height()) // 2))
+        popup.blit(quit_text, (quit_button_rect.x + (quit_button_rect.width - quit_text.get_width()) // 2,
+                            quit_button_rect.y + (quit_button_rect.height - quit_text.get_height()) // 2))
 
-    # Revert the board for rest of validations
-    board[start_row][start_col] = original_start_piece
-    board[end_row][end_col] = original_end_piece
+        # Display the popup and handle interactions
+        running_popup = True
+        while running_popup:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    exit()
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_x, mouse_y = event.pos
+                    # Adjust mouse positions relative to popup location
+                    adjusted_x = mouse_x - popup_x
+                    adjusted_y = mouse_y - popup_y
 
-    piece = piece.lower()
+                    if restart_button_rect.collidepoint(adjusted_x, adjusted_y):
+                        self.restart_game()
+                        running_popup = False
+                    elif quit_button_rect.collidepoint(adjusted_x, adjusted_y):
+                        pygame.quit()
+                        exit()
 
-    # Pawn movement
-    if piece == "p":
-        direction = (
-            -1 if start_piece.isupper() else 1
-        )  # White moves up, black moves down
-        if start_col == end_col and board[end_row][end_col] == "-":
-            # Regular pawn move
-            if end_row == start_row + direction:
-                return True
-            # Initial double move
-            if (
-                (start_row == 1 or start_row == 6)
-                and end_row == start_row + 2 * direction
-                and board[start_row + direction][start_col] == "-"
-            ):
-                return True
-        # Pawn capture
-        elif abs(start_col - end_col) == 1:
-            if end_row == start_row + direction:
-                # Regular capture
-                if end_piece != "-":
-                    return True
-                # En passant capture
-                elif en_passant_square == (end_row, end_col):
-                    return True
-
-    # Rook movement
-    if piece == "r":
-        if start_row == end_row or start_col == end_col:  # Move in straight lines
-            if clear_path(board, start_pos, end_pos):
-                return True
-
-    # Knight movement
-    if piece == "n":
-        if (abs(start_row - end_row) == 2 and abs(start_col - end_col) == 1) or (
-            abs(start_row - end_row) == 1 and abs(start_col - end_col) == 2
-        ):
-            return True
-
-    # Bishop movement
-    if piece == "b":
-        if abs(start_row - end_row) == abs(start_col - end_col):  # Move diagonally
-            if clear_path(board, start_pos, end_pos):
-                return True
-
-    # Queen movement
-    if piece == "q":
-        if (start_row == end_row or start_col == end_col) or (
-            abs(start_row - end_row) == abs(start_col - end_col)
-        ):
-            if clear_path(board, start_pos, end_pos):
-                return True
-
-    # King movement
-    if piece == "k":
-        if abs(start_row - end_row) <= 1 and abs(start_col - end_col) <= 1:
-            return True
-
-    return False
-
-
-# Helper function to check if path between two squares is clear (for rooks, bishops, queens)
-def clear_path(board, start, end):
-    start_row, start_col = start
-    end_row, end_col = end
-
-    if start_row == end_row:
-        step = 1 if start_col < end_col else -1
-        for col in range(start_col + step, end_col, step):
-            if board[start_row][col] != "-":
-                return False
-    elif start_col == end_col:
-        step = 1 if start_row < end_row else -1
-        for row in range(start_row + step, end_row, step):
-            if board[row][start_col] != "-":
-                return False
-    else:
-        row_step = 1 if start_row < end_row else -1
-        col_step = 1 if start_col < end_col else -1
-        for i in range(1, abs(start_row - end_row)):
-            if board[start_row + i * row_step][start_col + i * col_step] != "-":
-                return False
-
-    return True
+            # Render popup
+            self.screen.blit(popup, (popup_x, popup_y))
+            pygame.display.flip()
 
 
-def check_check(board, turn):
-    # Locate the current player's king
-    king = "K" if turn == "white" else "k"
-    king_pos = None
+    def restart_game(self):
+        """
+        Resets the game state to the initial setup for a new game.
+        """
+        self.board = ChessBoard()  # Reinitialize the chessboard
+        self.selected_piece = None
+        self.legal_moves = []
+        self.running = True  # Resume the game loop
 
-    for row in range(ROWS):
-        for col in range(COLS):
-            if board[row][col] == king:
-                king_pos = (row, col)
-                break
-        if king_pos:
-            break
-
-    if not king_pos:
-        raise ValueError("King not found on the board")  # Safety check
-
-    # Check all opposing pieces to see if any can capture the king
-    opponent_turn = "black" if turn == "white" else "white"
-    for row in range(ROWS):
-        for col in range(COLS):
-            piece = board[row][col]
-
-            # Skip empty squares or current player's pieces
-            if (
-                piece == "-"
-                or (turn == "white" and piece.isupper())
-                or (turn == "black" and piece.islower())
-            ):
+    def game_loop(self):
+        """
+        Main game loop for handling events and rendering the game.
+        """
+        while self.running:
+            if self.ai and self.board.turn == 'black':  # AI's turn (assuming AI plays as black)
+                legal_moves = self.board.generate_legal_moves(self.board.turn)
+                ai_move = self.ai.choose_move(self.board)
+                if ai_move in legal_moves:  # Validate AI move
+                    self.board.execute_move(ai_move)
+                    self.check_game_over()  # Check for game-ending conditions
+                else:
+                    raise ValueError("AI attempted an illegal move!")
                 continue
 
-            # Determine if this piece can move to the king's position
-            start_pos = (row, col)
-            if is_threatening_king(board, piece, start_pos, king_pos):
-                return True  # King is in check
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    self.handle_click(pygame.mouse.get_pos())
 
-    return False  # No threats to the king
+            # Draw the board and update the screen
+            self.draw_board()
+            self.highlight_moves()
+            pygame.display.flip()
+            pygame.time.Clock().tick(60)
 
+        pygame.quit()
 
-def is_threatening_king(board, piece, start_pos, king_pos):
-    """Helper function to check if a piece at start_pos can capture the king at king_pos."""
-    start_row, start_col = start_pos
-    end_row, end_col = king_pos
-    piece = piece.lower()
-
-    # Pawn movement (checks capture only)
-    if piece == "p":
-        direction = -1 if board[start_row][start_col].isupper() else 1
-        if abs(start_col - end_col) == 1 and end_row == start_row + direction:
-            return True
-
-    # Rook movement (straight line)
-    elif piece == "r" and (start_row == end_row or start_col == end_col):
-        if clear_path(board, start_pos, king_pos):
-            return True
-
-    # Knight movement (L-shape)
-    elif piece == "n":
-        if (abs(start_row - end_row) == 2 and abs(start_col - end_col) == 1) or (
-            abs(start_row - end_row) == 1 and abs(start_col - end_col) == 2
-        ):
-            return True
-
-    # Bishop movement (diagonal)
-    elif piece == "b" and abs(start_row - end_row) == abs(start_col - end_col):
-        if clear_path(board, start_pos, king_pos):
-            return True
-
-    # Queen movement (combination of rook and bishop)
-    elif piece == "q":
-        if (
-            start_row == end_row
-            or start_col == end_col
-            or abs(start_row - end_row) == abs(start_col - end_col)
-        ):
-            if clear_path(board, start_pos, king_pos):
-                return True
-
-    # King movement (one square in any direction)
-    elif piece == "k":
-        if abs(start_row - end_row) <= 1 and abs(start_col - end_col) <= 1:
-            return True
-
-    return False
-
-
-def is_checkmate(board, turn):
-    if not check_check(board, turn):
-        return False  # Not in check, so cannot be checkmate
-
-    # Check if any legal move can escape check
-    for row in range(ROWS):
-        for col in range(COLS):
-            piece = board[row][col]
-            if (turn == "white" and piece.isupper()) or (
-                turn == "black" and piece.islower()
-            ):
-                start_pos = (row, col)
-
-                # Try moving the piece to all squares on the board
-                for end_row in range(ROWS):
-                    for end_col in range(COLS):
-                        end_pos = (end_row, end_col)
-
-                        # Check if the move is valid and doesn't leave the king in check
-                        if validate_move(board, piece, start_pos, end_pos, turn):
-                            # Temporarily make the move
-                            original_start = board[start_pos[0]][start_pos[1]]
-                            original_end = board[end_pos[0]][end_pos[1]]
-                            board[start_pos[0]][start_pos[1]] = "-"
-                            board[end_pos[0]][end_pos[1]] = piece
-
-                            # If the move resolves check, it’s not checkmate
-                            if not check_check(board, turn):
-                                # Revert the move and return False
-                                board[start_pos[0]][start_pos[1]] = original_start
-                                board[end_pos[0]][end_pos[1]] = original_end
-                                return False
-
-                            # Revert the move
-                            board[start_pos[0]][start_pos[1]] = original_start
-                            board[end_pos[0]][end_pos[1]] = original_end
-
-    return True  # No moves avoid check, so it's checkmate
-
-
-def is_stalemate(board, turn):
-    if check_check(board, turn):
-        return False  # If in check, it cannot be stalemate
-
-    # Check if any legal move exists for the player
-    for row in range(ROWS):
-        for col in range(COLS):
-            piece = board[row][col]
-            if (turn == "white" and piece.isupper()) or (
-                turn == "black" and piece.islower()
-            ):
-                start_pos = (row, col)
-
-                # Try moving the piece to all squares on the board
-                for end_row in range(ROWS):
-                    for end_col in range(COLS):
-                        end_pos = (end_row, end_col)
-
-                        # Check if the move is valid and keeps the king out of check
-                        if validate_move(board, piece, start_pos, end_pos, turn):
-                            # Temporarily make the move
-                            original_start = board[start_pos[0]][start_pos[1]]
-                            original_end = board[end_pos[0]][end_pos[1]]
-                            board[start_pos[0]][start_pos[1]] = "-"
-                            board[end_pos[0]][end_pos[1]] = piece
-
-                            # If this move keeps the king out of check, it's not stalemate
-                            if not check_check(board, turn):
-                                # Revert the move and return False
-                                board[start_pos[0]][start_pos[1]] = original_start
-                                board[end_pos[0]][end_pos[1]] = original_end
-                                return False
-
-                            # Revert the move
-                            board[start_pos[0]][start_pos[1]] = original_start
-                            board[end_pos[0]][end_pos[1]] = original_end
-
-    return True  # No legal moves available, and not in check, so it’s stalemate
-
-
-# Function for castling
-def validate_castling(board, start, end, turn):
-    start_row, start_col = start
-    end_row, end_col = end
-
-    if turn == "white":
-        # King-side castling for white
-        if (
-            start == (7, 4)
-            and end == (7, 6)
-            and not white_king_moved
-            and not white_rook_king_side_moved
-        ):
-            if board[7][5] == "-" and board[7][6] == "-":
-                # Check if passing squares are safe
-                if (
-                    not check_check(board, turn)
-                    and not check_check(move_temporary(board, (7, 4), (7, 5)), turn)
-                    and not check_check(move_temporary(board, (7, 4), (7, 6)), turn)
-                ):
-                    return "castling_kingside"
-
-        # Queen-side castling for white
-        if (
-            start == (7, 4)
-            and end == (7, 2)
-            and not white_king_moved
-            and not white_rook_queen_side_moved
-        ):
-            if board[7][1] == "-" and board[7][2] == "-" and board[7][3] == "-":
-                if (
-                    not check_check(board, turn)
-                    and not check_check(move_temporary(board, (7, 4), (7, 3)), turn)
-                    and not check_check(move_temporary(board, (7, 4), (7, 2)), turn)
-                ):
-                    return "castling_queenside"
-
-    elif turn == "black":
-        # King-side castling for black
-        if (
-            start == (0, 4)
-            and end == (0, 6)
-            and not black_king_moved
-            and not black_rook_king_side_moved
-        ):
-            if board[0][5] == "-" and board[0][6] == "-":
-                if (
-                    not check_check(board, turn)
-                    and not check_check(move_temporary(board, (0, 4), (0, 5)), turn)
-                    and not check_check(move_temporary(board, (0, 4), (0, 6)), turn)
-                ):
-                    return "castling_kingside"
-
-        # Queen-side castling for black
-        if (
-            start == (0, 4)
-            and end == (0, 2)
-            and not black_king_moved
-            and not black_rook_queen_side_moved
-        ):
-            if board[0][1] == "-" and board[0][2] == "-" and board[0][3] == "-":
-                if (
-                    not check_check(board, turn)
-                    and not check_check(move_temporary(board, (0, 4), (0, 3)), turn)
-                    and not check_check(move_temporary(board, (0, 4), (0, 2)), turn)
-                ):
-                    return "castling_queenside"
-
-    return False  # If none of the castling conditions are met
-
-
-# Promote pawn if it gets to the last rank
-def promote_pawn():
-    choice = input("Promote pawn to (Q)ueen, (R)ook, (B)ishop, or (N)ight: ").upper()
-    if choice in ["Q", "R", "B", "N"]:
-        return choice
-    return "Q"  # Default to Queen if input is invalid
-
-
-# Helper function to temporarily move a piece
-def move_temporary(board, start, end):
-    temp_board = [row[:] for row in board]
-    piece = temp_board[start[0]][start[1]]
-    temp_board[start[0]][start[1]] = "-"
-    temp_board[end[0]][end[1]] = piece
-    return temp_board
-
-
-# Move pieces
-def move_piece(board, start, end):
-    global white_king_moved, black_king_moved
-    global white_rook_king_side_moved, white_rook_queen_side_moved
-    global black_rook_king_side_moved, black_rook_queen_side_moved
-    global en_passant_square
-
-    piece = board[start[0]][start[1]]
-    board[start[0]][start[1]] = "-"
-    board[end[0]][end[1]] = piece
-
-    # Track king and rook movements
-    if piece == "K":
-        white_king_moved = True
-    elif piece == "k":
-        black_king_moved = True
-    elif piece == "R" and start == (7, 7):  # White king-side rook
-        white_rook_king_side_moved = True
-    elif piece == "R" and start == (7, 0):  # White queen-side rook
-        white_rook_queen_side_moved = True
-    elif piece == "r" and start == (0, 7):  # Black king-side rook
-        black_rook_king_side_moved = True
-    elif piece == "r" and start == (0, 0):  # Black queen-side rook
-        black_rook_queen_side_moved = True
-
-    # Check for pawn promotion
-    if piece == "P" and end[0] == 0:  # White pawn reaches the last rank
-        board[end[0]][end[1]] = promote_pawn()
-    elif piece == "p" and end[0] == 7:  # Black pawn reaches the last rank
-        board[end[0]][end[1]] = promote_pawn().lower()
-
-    # Reset en passant square after each move
-    old_en_passant_square = en_passant_square
-    en_passant_square = None
-
-    # Check for two-square pawn advance to set en passant target
-    if piece == "P" and start[0] == 6 and end[0] == 4:
-        en_passant_square = (5, end[1])  # White pawn's target
-    elif piece == "p" and start[0] == 1 and end[0] == 3:
-        en_passant_square = (2, end[1])  # Black pawn's target
-
-    # En passant capture handling
-    if (
-        piece.lower() == "p"
-        and old_en_passant_square == end
-        and abs(start[1] - end[1]) == 1
-    ):
-        capture_row = start[0]  # Row of the captured pawn
-        board[capture_row][end[1]] = "-"  # Remove the opponent’s pawn
-
-
-# Main game loop
-def main():
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Chess Game")
-    board = initialize_board()
-    load_images()
-
-    selected_square = None  # Square selected by the player
-    turn = "white"  # Track turns: white moves first
-    running = True
-    clock = pygame.time.Clock()
-
-    while running:
-        draw_board(screen, selected_square)
-        draw_pieces(screen, board)
-        pygame.display.flip()
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-                pygame.quit()
-                sys.exit()
-
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                pos = pygame.mouse.get_pos()
-                row, col = get_square_under_mouse(pos)
-
-                if selected_square:
-                    # Validate move before applying it
-                    start_row, start_col = selected_square
-                    piece = board[start_row][start_col]
-                    if validate_move(
-                        board,
-                        board[start_row][start_col],
-                        selected_square,
-                        (row, col),
-                        turn,
-                    ):
-                        move_piece(board, selected_square, (row, col))
-                        turn = "black" if turn == "white" else "white"  # Switch turns
-                        # After moving a piece and switching turns
-                        if is_checkmate(board, turn):
-                            print(f"Checkmate! {turn} loses.")
-                            running = False  # End the game
-                        elif is_stalemate(board, turn):
-                            print("Stalemate! It's a draw.")
-                            running = False  # End the game
-
-                    # Castling logic
-                    castling_result = validate_castling(
-                        board, (start_row, start_col), (row, col), turn
-                    )
-                    if castling_result == "castling_kingside":
-                        # Move king and rook for king-side castling
-                        move_piece(board, (start_row, 4), (start_row, 6))  # King
-                        move_piece(board, (start_row, 7), (start_row, 5))  # Rook
-                        turn = "black" if turn == "white" else "white"  # Switch turns
-                    elif castling_result == "castling_queenside":
-                        # Move king and rook for queen-side castling
-                        move_piece(board, (start_row, 4), (start_row, 2))  # King
-                        move_piece(board, (start_row, 0), (start_row, 3))  # Rook
-                        turn = "black" if turn == "white" else "white"  # Switch turns
-                    selected_square = None
-                else:
-                    selected_square = (row, col)
-
-        clock.tick(60)
-
-
-if __name__ == "__main__":
-    main()
+# game = GameController()
+# game.__init__()
+# game.game_loop()
